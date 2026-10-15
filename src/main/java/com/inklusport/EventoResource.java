@@ -23,53 +23,47 @@ public class EventoResource {
 
         String requestId = UUID.randomUUID().toString();
         MDC.put("request.id", requestId);
-        
-        if (request == null
+
+        try {
+            Log.debug("DIAGNOSTICO_INTERNO: iniciando validación");
+
+            if (request == null
                 || request.nombre() == null
                 || request.nombre().isBlank()
                 || request.usuarioId() == null) {
 
-            Log.warn("Solicitud de creación de evento inválida");
+                Log.warn("Solicitud de creación inválida: faltan campos obligatorios (nombre, usuarioId)");
 
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(Map.of(
-                        "error",
-                        "El nombre y el usuario son obligatorios"
-                    ))
-                    .build();
-        }
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of(
+                            "error",
+                            "El nombre y el usuario son obligatorios"
+                        ))
+                        .build();
+            }
 
-        Log.infof(
-            "Validando solicitud de creación. usuarioId=%d",
-            request.usuarioId()
-        );
-
-        Log.infof(
-            "Solicitud de creación de evento. usuarioId=%d",
-            request.usuarioId()
-        );
-        try {
-            /**
-             * Simulación de la creación del evento.
-             * Todavía no guardamos datos en una base de datos.
-             */
-            Log.infof(
-                "Evento procesado correctamente. usuarioId=%d",
-                request.usuarioId()
-            );
+            Log.debug("Validación completada");
+            Log.info("Solicitud de creación aceptada y procesada");
 
             return Response.status(Response.Status.CREATED)
                     .entity(Map.of(
-                        "mensaje", "Evento creado correctamente",
-                        "nombre", request.nombre()
+                        "mensaje", "Evento procesado",
+                        "requestId", requestId
                     ))
                     .build();
+
         } catch (RuntimeException e) {
-            Log.errorf(
-                e,
-                "Error al procesar la creación del evento"
-            );
-            throw e;
+            Log.error("No se pudo completar la creación del evento", e);
+
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of(
+                        "error",
+                        "No se pudo procesar la creación del evento",
+                        "requestId", requestId
+                    ))
+                    .build();
+        } finally {
+            MDC.remove("request.id");
         }
     }
 }
