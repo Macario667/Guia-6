@@ -17,14 +17,14 @@ class EventoResourceTest {
             .body("""
                 {
                     "nombre": "Torneo regional",
-                    "usuarioId": 25
+                    "capacidad": 20
                 }
                 """)
         .when()
             .post("/eventos")
         .then()
-            .statusCode(201)
-            .body("mensaje", is("Evento procesado"));
+            .statusCode(200)
+            .body(is("Evento válido: Torneo regional"));
     }
 
     @Test
@@ -34,14 +34,15 @@ class EventoResourceTest {
             .body("""
                 {
                     "nombre": " ",
-                    "usuarioId": 25
+                    "capacidad": 20
                 }
                 """)
         .when()
             .post("/eventos")
         .then()
             .statusCode(400)
-            .body("error",
-                is("El nombre y el usuario son obligatorios"));
+            .contentType("application/json")
+            .body("error", is("Error de validación"))
+            .body("mensaje", is("El nombre del evento es obligatorio"));
     }
 }

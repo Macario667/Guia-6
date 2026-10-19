@@ -1,13 +1,28 @@
 package com.inklusport;
 
-import org.jboss.logging.Logger;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 
+@ApplicationScoped /** registra la clase como un bean CDI administrado por Quarkus. */
 public class EventoService {
 
-    private static final Logger LOG =
-        Logger.getLogger(EventoService.class);
+    /**
+     * Solo se ejecuta esta lógica cuando los datos sean válidos
+     * @param request
+     * @return
+     */
+    public String validarEvento(@Valid CrearEventoRequest request) {
+        return "Evento válido: " + request.nombre;
+    }
 
-    public void registrarEvento(String nombre) {
-        LOG.infof("Registrando evento: %s", nombre);
+    @NotNull(message = "La capacidad disponible no puede ser nula")
+    @Min(value = 0, message = "La capacidad disponible no puede ser negativa")
+    public Integer calcularCuposDisponibles(
+        Integer capacidadTotal,
+        Integer inscritos
+    ) {
+        return capacidadTotal - inscritos;
     }
 }
