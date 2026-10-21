@@ -4,6 +4,211 @@ Este documento resume los conceptos y prácticas de logging trabajados en
 `eventos-service`, un servicio desarrollado con **Quarkus 3.40.1**,
 Maven y Java.
 
+## Guía práctica: arrancar y probar la API
+
+### Requisitos e inicio
+
+Se necesita JDK 25 y PowerShell en la carpeta raíz del proyecto. No hace
+falta instalar Maven porque el repositorio incluye Maven Wrapper:
+
+```powershell
+.\mvnw.cmd quarkus:dev
+```
+
+Espera el mensaje de Quarkus que confirma que la aplicación está lista.
+El servidor escucha en `http://localhost:8080`. Mantén abierta esta
+terminal para ver los logs; para apagarlo usa `Ctrl+C`.
+
+### Probar con Postman
+
+1. Abre Postman y crea una solicitud nueva.
+2. Selecciona el método y la URL de la tabla siguiente.
+3. Para `POST` y `PUT`, abre **Body > raw > JSON** y pega el JSON de
+   ejemplo. Postman agregará `Content-Type: application/json`; si no,
+   agrega ese encabezado manualmente.
+4. Pulsa **Send**. El código HTTP y el cuerpo de respuesta aparecen
+   debajo. Para `GET /logs/demo`, mira también **Headers** y busca
+   `X-Request-Id`.
+
+No se requiere autenticación ni una base de datos para estas rutas.
+
+| Método | URL | Qué comprobar |
+| --- | --- | --- |
+| `GET` | `http://localhost:8080/hello` | Respuesta de texto de bienvenida. |
+| `POST` | `http://localhost:8080/eventos` | Validación automática y servicio; válido devuelve 200. |
+| `POST` | `http://localhost:8080/validacion/eventos` | `@Valid`; válido devuelve 201 con el JSON recibido. |
+| `POST` | `http://localhost:8080/eventos/validacion-manual` | Validación invocada directamente; devuelve JSON válido o errores. |
+| `POST` | `http://localhost:8080/eventos/gestion/crear` | Grupo de validación de creación; el `id` debe ser `null`. |
+| `PUT` | `http://localhost:8080/eventos/gestion/actualizar` | Grupo de actualización; el `id` debe tener un valor. |
+| `GET` | `http://localhost:8080/logs/demo` | Emite TRACE, DEBUG, INFO, WARN, ERROR y FATAL. |
+
+Para las tres primeras operaciones de eventos usa este cuerpo:
+
+```json
+{
+  "nombre": "Torneo inclusivo",
+  "capacidad": 30
+}
+```
+
+En `/eventos/gestion/crear`, usa:
+
+```json
+{
+  "id": null,
+  "nombre": "Torneo inclusivo",
+  "capacidad": 30
+}
+```
+
+En `/eventos/gestion/actualizar`, cambia el `id` por un número, por
+ejemplo `42`. Para practicar respuestas `400 Bad Request`, vuelve a
+enviar un cuerpo con `"nombre": " "` o `"capacidad": 0`; para probar un
+campo nulo usa `"capacidad": null`. La operación de creación también
+debe rechazar un `id` distinto de `null`.
+
+Las respuestas de validación automática tienen la forma
+`{"error":"Error de validación","mensaje":"..."}`. La validación manual
+devuelve `{"valido":false,"errores":"..."}`. Los textos del endpoint de
+gestión se cargan desde `ValidationMessages.properties` y están en
+inglés; los demás mensajes de validación están definidos en español.
+
+### Probar desde PowerShell sin Postman
+
+También se pueden enviar solicitudes con `curl.exe` (se usa el ejecutable
+para evitar el alias histórico de `curl` en Windows PowerShell):
+
+```powershell
+curl.exe -i http://localhost:8080/hello
+
+curl.exe -i -X POST http://localhost:8080/eventos `
+  -H "Content-Type: application/json" `
+  -d '{"nombre":"Torneo inclusivo","capacidad":30}'
+
+curl.exe -i http://localhost:8080/logs/demo
+```
+
+`-i` muestra encabezados además del cuerpo; en la última solicitud
+permite ver el identificador `X-Request-Id`.
+
+### Practicar TRACE, DEBUG, INFO y los demás niveles
+
+El perfil de desarrollo ya configura la categoría `com.inklusport` en
+`TRACE`. Después de iniciar el servicio, llama una o varias veces a
+`GET http://localhost:8080/logs/demo`. En la consola deben verse los
+mensajes de demostración, el nivel y el mismo `request.id` que devuelve
+la respuesta. El registro cuyo texto contiene `DIAGNOSTICO_INTERNO` se
+oculta en consola por `FiltroConsola`.
+
+El handler de archivo tiene nivel mínimo `INFO`: por eso
+`logs/eventos.log` conserva INFO, WARN, ERROR y FATAL, pero no TRACE ni
+DEBUG. El filtro se aplica a la consola, no a ese archivo. Para revisar
+las últimas líneas desde otra ventana de PowerShell:
+
+```powershell
+Get-Content .\logs\eventos.log -Tail 30
+```
+
+Puedes modificar `%dev.quarkus.log.category."com.inklusport".level` en
+`application.properties` y reiniciar Quarkus para comprobar el umbral:
+
+- `TRACE`: aparecen TRACE y todos los niveles más importantes.
+- `DEBUG`: desaparece TRACE, se conserva DEBUG y los niveles superiores.
+- `INFO`: desaparecen TRACE y DEBUG; se conserva INFO y lo superior.
+- `WARN`: solo WARN, ERROR y FATAL.
+- `ERROR`: solo ERROR y FATAL.
+
+El nivel global está en INFO y el perfil `%prod` también configura INFO
+para la categoría de la aplicación. Para comparar perfiles, empaqueta y
+ejecuta la aplicación fuera del modo desarrollo:
+
+```powershell
+.\mvnw.cmd package
+java -jar .\target\quarkus-app\quarkus-run.jar
+```
+
+### Ejercicios de las guías de referencia
+
+- **Logging de Quarkus:** usa `/logs/demo`, cambia el nivel de la
+  categoría y compara consola con `logs/eventos.log`. Para observar la
+  rotación, configura temporalmente un tamaño pequeño y genera
+  suficientes registros; no hace falta llenar los logs de producción.
+- **Validación:** compara el rechazo automático de `/eventos` con la
+  respuesta manual de `/eventos/validacion-manual`. Prueba también los
+  grupos Crear y Actualizar del recurso de gestión.
+- **Quarkus REST y JSON REST:** crea las solicitudes anteriores como
+  `application/json` en Postman. `/hello` es el ejemplo de respuesta de
+  texto plano.
+- **Conceptos JSON:** modifica propiedades y valores en Body > raw >
+  JSON. El nombre de las propiedades debe coincidir con el DTO y la
+  sintaxis tiene que ser JSON válido (comillas dobles, sin coma final).
+- **Logging JSON:** la extensión ya está en `pom.xml`, pero la consola
+  usa formato de texto y JSON está desactivado. Para probarlo, cambia
+  temporalmente `quarkus.log.console.json.enabled=false` a `true`,
+  reinicia y vuelve a llamar `/logs/demo`; restaura `false` para volver
+  al formato con `request.id` visible. La configuración JSON del handler
+  de archivo es independiente.
+- **OpenTelemetry y centralización:** la extensión está instalada, pero
+  la exportación de logs está desactivada deliberadamente. Para
+  practicarla hace falta iniciar un colector OTLP y configurarlo; tener
+  `localhost:4317` en propiedades no instala ni inicia el colector.
+  Consulta las guías oficiales al final antes de habilitar la
+  exportación.
+
+## Qué contiene cada archivo
+
+### Código de la aplicación (`src/main/java/com/inklusport`)
+
+| Archivo | Responsabilidad |
+| --- | --- |
+| `GreetingResource.java` | `GET /hello`, ejemplo REST sencillo de texto plano. |
+| `EventoResource.java` | `POST /eventos`; delega la validación y la respuesta en `EventoService`. |
+| `ValidacionResource.java` | `POST /validacion/eventos`; ejemplo mínimo de `@Valid` que devuelve 201 con el request aceptado. |
+| `ValidacionManualResource.java` | `POST /eventos/validacion-manual`; inyecta `Validator` y construye la respuesta de validación explícitamente. |
+| `EventoGestionResource.java` | Rutas de crear y actualizar; convierte grupos de validación según la operación. |
+| `LoggingResource.java` | `GET /logs/demo`; genera una muestra de los niveles TRACE a FATAL y del filtro de consola. |
+| `RequestIdFilter.java` | Crea un UUID por solicitud, lo añade al MDC y devuelve el mismo valor en `X-Request-Id`; elimina MDC al terminar. |
+| `EventoService.java` | Bean CDI con la lógica de validación del evento y un método de cálculo de cupos con restricciones de retorno. |
+| `CrearEventoRequest.java` | DTO de entrada con reglas para nombre y capacidad. |
+| `EventoGestionRequest.java` | DTO de gestión con restricciones de `id` por grupo y mensajes interpolados desde el bundle. |
+| `ValidationGroups.java` | Declara los grupos `Crear` y `Actualizar` usados por el recurso de gestión. |
+| `Evento.java` | Clase de dominio de ejemplo; actualmente no está conectada a las rutas ni al servicio. |
+| `EventoExceptionMapper.java` | Convierte infracciones de Bean Validation no manejadas manualmente en respuestas HTTP 400 JSON. |
+| `FiltroConsola.java` | Descarta de la consola los registros cuyo mensaje contiene `DIAGNOSTICO_INTERNO`. |
+
+### Configuración y recursos
+
+| Archivo | Responsabilidad |
+| --- | --- |
+| `src/main/resources/application.properties` | Puerto y configuración de logging: niveles, formato, filtro, archivo, rotación, perfiles, nombre de aplicación, OpenTelemetry e idiomas. |
+| `src/main/resources/ValidationMessages.properties` | Mensajes de validación para los campos del recurso de gestión (en inglés). |
+| `pom.xml` | Dependencias, versiones de Quarkus/Java, compilador, pruebas y perfil de compilación nativa. |
+| `.mvn/wrapper/maven-wrapper.properties` | Versión y distribución de Maven que descarga/usa el wrapper. |
+| `mvnw` / `mvnw.cmd` | Lanzadores de Maven Wrapper para Unix y Windows, respectivamente. En este equipo se usa `mvnw.cmd`. |
+| `.gitignore` | Excluye `target`, archivos del IDE, configuración local y otros artefactos generados. Los logs no están excluidos actualmente. |
+| `.dockerignore` | Define los archivos que Docker no envía al contexto de construcción. |
+
+### Pruebas y Docker
+
+| Archivo o carpeta | Responsabilidad |
+| --- | --- |
+| `src/test/java/com/inklusport/GreetingResourceTest.java` | Prueba de `GET /hello`. |
+| `src/test/java/com/inklusport/GreetingResourceIT.java` | Ejecuta la prueba de bienvenida en modo de integración/empaquetado. |
+| `src/test/java/com/inklusport/EventoResourceTest.java` | Pruebas de evento válido y nombre inválido en `/eventos`. |
+| `src/test/java/com/inklusport/ValidacionResourceTest.java` | Pruebas de validación manual y automática, incluidos casos inválidos. |
+| `src/test/java/com/inklusport/EventoGestionResourceTest.java` | Pruebas de creación/actualización y mensajes localizados de validación. |
+| `src/test/java/com/inklusport/EventoServiceTest.java` | Pruebas unitarias del servicio y del cálculo de cupos. |
+| `src/test/java/com/inklusport/LoggingResourceTest.java` | Comprueba la ruta de logging y el formato UUID del encabezado de correlación. |
+| `src/test/java/com/inklusport/FiltroConsolaTest.java` | Comprueba que el filtro descarte el marcador interno y conserve mensajes normales. |
+| `src/main/docker/Dockerfile.jvm` | Imagen de contenedor para la aplicación JVM empaquetada. |
+| `src/main/docker/Dockerfile.legacy-jar` | Imagen JVM para el formato legacy-jar de Quarkus. |
+| `src/main/docker/Dockerfile.native` | Imagen nativa con base UBI minimal. |
+| `src/main/docker/Dockerfile.native-micro` | Imagen nativa más pequeña con base Quarkus micro. |
+
+Los directorios `target` y `logs` contienen artefactos de compilación y
+ejecución; no son código fuente. `logs/eventos.log` es la salida
+configurada para el handler de esta aplicación.
+
 ## Guías adaptadas y recorrido práctico
 
 - [Configuring Logging](https://quarkus.io/guides/logging): es la guía principal de este proyecto. `application.properties` configura nivel y formato de consola, filtro, handler de archivo con rotación y niveles por perfil.
@@ -28,7 +233,7 @@ Prueba también un nombre vacío o una capacidad igual a cero: las restricciones
 
 ### Practicar el logging configurado
 
-- Envía solicitudes y observa el formato de consola, incluidos el nivel y el campo `request.id` cuando exista un valor MDC.
+- Envía solicitudes y observa el formato de consola, incluidos el nivel y el `request.id` generado para cada solicitud.
 - La configuración enruta la categoría `com.inklusport` al handler `EVENTOS`, que escribe en `logs/eventos.log` y conserva copias rotadas.
 - El filtro de consola descarta registros cuyo mensaje contenga `DIAGNOSTICO_INTERNO`.
 - Compara `%dev` y `%prod`: el nivel de la categoría de la aplicación cambia entre ambos perfiles.
@@ -39,6 +244,8 @@ Prueba también un nombre vacío o una capacidad igual a cero: las restricciones
 ## Tabla de contenidos
 
 -   [Guías adaptadas y recorrido práctico](#guías-adaptadas-y-recorrido-práctico)
+-   [Guía práctica: arrancar y probar la API](#guía-práctica-arrancar-y-probar-la-api)
+-   [Qué contiene cada archivo](#qué-contiene-cada-archivo)
 -   [1. Objetivos de aprendizaje](#1-objetivos-de-aprendizaje)
 -   [2. Ejecutar el proyecto y las
     pruebas](#2-ejecutar-el-proyecto-y-las-pruebas)

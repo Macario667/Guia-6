@@ -21,7 +21,7 @@ public class EventoGestionResource {
         @ConvertGroup(to = ValidationGroups.Crear.class)
         EventoGestionRequest request
     ) {
-        return "Evento listo pata crear: " + request.nombre;
+        return "Evento listo para crear: " + request.nombre;
     }
 
     @PUT
