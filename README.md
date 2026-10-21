@@ -4,14 +4,41 @@ Este documento resume los conceptos y prácticas de logging trabajados en
 `eventos-service`, un servicio desarrollado con **Quarkus 3.40.1**,
 Maven y Java.
 
-> **Estado actual:** las pruebas automatizadas pasan (`3` pruebas, `0`
-> fallos y `0` errores). La última ejecución mostró errores de conexión
-> al exportador OpenTelemetry en `localhost:4317`; la exportación
-> requiere un receptor OTLP disponible o debe desactivarse si no se va a
-> utilizar.
+## Guías adaptadas y recorrido práctico
+
+- [Configuring Logging](https://quarkus.io/guides/logging): es la guía principal de este proyecto. `application.properties` configura nivel y formato de consola, filtro, handler de archivo con rotación y niveles por perfil.
+- [Validation with Hibernate Validator](https://quarkus.io/guides/validation): `CrearEventoRequest` declara `@NotBlank`, `@NotNull` y `@Min`; `EventoResource` y `ValidacionResource` reciben el objeto con `@Valid`.
+- [Writing REST Services with RESTEasy Reactive](https://quarkus.io/guides/rest): los endpoints usan Jakarta REST con Quarkus REST.
+- [Writing JSON REST Services](https://quarkus.io/guides/rest-json): las solicitudes de eventos usan `application/json` y la extensión `quarkus-rest-jackson`.
+- [Conocimientos JSON](https://www.nylas.com/blog/the-complete-guide-to-working-with-json/): repaso conceptual para construir el cuerpo de prueba de los endpoints JSON.
+
+La dependencia `quarkus-rest` corresponde a Quarkus REST (antes RESTEasy Reactive); la guía de [RESTEasy Classic](https://es.quarkus.io/guides/resteasy) no es una descripción directa de este proyecto.
+
+### Probar la validación
+
+Desde PowerShell, inicia el servicio con `.\mvnw.cmd quarkus:dev`. En otra terminal, una solicitud válida al recurso `/eventos`:
+
+```powershell
+curl.exe -i -X POST http://localhost:8080/eventos `
+  -H "Content-Type: application/json" `
+  -d '{"nombre":"Torneo inclusivo","capacidad":30}'
+```
+
+Prueba también un nombre vacío o una capacidad igual a cero: las restricciones del request deben rechazar los datos inválidos. El recurso `/validacion/eventos` ofrece una variante que responde con HTTP 201 al aceptar el objeto.
+
+### Practicar el logging configurado
+
+- Envía solicitudes y observa el formato de consola, incluidos el nivel y el campo `request.id` cuando exista un valor MDC.
+- La configuración enruta la categoría `com.inklusport` al handler `EVENTOS`, que escribe en `logs/eventos.log` y conserva copias rotadas.
+- El filtro de consola descarta registros cuyo mensaje contenga `DIAGNOSTICO_INTERNO`.
+- Compara `%dev` y `%prod`: el nivel de la categoría de la aplicación cambia entre ambos perfiles.
+- OpenTelemetry está presente como dependencia, pero la exportación de logs está desactivada en `application.properties`.
+
+> Las pruebas disponibles se ejecutan con `.\mvnw.cmd test`. Este README no fija un resultado de ejecución, ya que puede variar según el entorno.
 
 ## Tabla de contenidos
 
+-   [Guías adaptadas y recorrido práctico](#guías-adaptadas-y-recorrido-práctico)
 -   [1. Objetivos de aprendizaje](#1-objetivos-de-aprendizaje)
 -   [2. Ejecutar el proyecto y las
     pruebas](#2-ejecutar-el-proyecto-y-las-pruebas)
@@ -63,14 +90,7 @@ Desde la carpeta raíz de `eventos-service`, en PowerShell:
 
 Este comando compila lo necesario y ejecuta las pruebas.
 
-La salida verificada más reciente mostró:
-
-``` text
-Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
-BUILD SUCCESS
-```
-
-El servicio se inició durante las pruebas en `http://localhost:8081`.
+Las pruebas cubren recursos REST y validación. Revisa la salida de Maven para el resultado de la ejecución actual.
 
 ## 3. API de logging y niveles
 
@@ -337,22 +357,8 @@ esperando que se combinen automáticamente.
 
 ## 12. Pruebas automatizadas
 
-El proyecto contiene pruebas para los recursos REST:
-
--   `EventoResourceTest`: 2 pruebas.
--   `GreetingResourceTest`: 1 prueba.
-
-Se ejecutan con `.\mvnw.cmd test`. Las pruebas de endpoints pueden
-verificar, por ejemplo, una creación válida y el rechazo de datos
-incompletos.
-
-En las últimas salidas se observó un comportamiento coherente con la
-validación del recurso de eventos:
-
--   La solicitud incompleta produjo una advertencia que identifica los
-    campos faltantes (`nombre` y `usuarioId`).
--   La solicitud aceptada produjo un mensaje informativo.
--   Las tres pruebas terminaron correctamente.
+Las pruebas JUnit y RestAssured están en `src/test/java`. Se ejecutan con
+`.\mvnw.cmd test` y cubren recursos, servicio y validación.
 
 Una prueba que pasa confirma el comportamiento cubierto por esa prueba;
 no garantiza por sí sola que toda la configuración de logging, rotación
@@ -365,49 +371,43 @@ logs cuando esa capacidad está configurada. También es posible
 centralizar registros en plataformas que los recopilan y permiten
 consultarlos.
 
-En el proyecto se instaló la extensión de OpenTelemetry y se observó que
-el servicio intentaba enviar datos a:
+El proyecto incluye la extensión de OpenTelemetry, pero la propiedad
+`quarkus.otel.logs.enabled=false` desactiva actualmente la exportación de
+logs. La URL configurada es:
 
 ``` text
 localhost:4317
 ```
 
-La última ejecución mostró:
-
-``` text
-Connection refused: localhost/127.0.0.1:4317
-```
-
-Esto indica que no había un receptor disponible en ese endpoint en ese
-momento. Tener instalada la extensión no implica que exista un colector
-ejecutándose.
+La configuración de una URL no implica que se exporten logs ni que haya
+un colector ejecutándose.
 
 ### Opciones
 
-1.  **Si no se necesita exportar logs por ahora**, desactivar la
-    exportación de logs de OpenTelemetry en la configuración
-    correspondiente:
+1.  **Si no se necesita exportar logs**, mantener desactivada la
+    exportación de logs de OpenTelemetry:
 
     ``` properties
     quarkus.otel.logs.enabled=false
     ```
 
-2.  **Si se quiere practicar observabilidad**, ejecutar o configurar un
-    receptor compatible con OTLP y verificar su endpoint. La guía de
+2.  **Si se quiere practicar observabilidad**, habilitar explícitamente
+    la exportación, ejecutar o configurar un receptor compatible con OTLP
+    y verificar su endpoint. La guía de
     OpenTelemetry Logging de la misma versión de Quarkus explica
     alternativas para recibir y visualizar los datos.
 
-Después de cambiar la configuración, vuelve a ejecutar las pruebas. No
-se debe considerar solucionado el problema hasta comprobar que los
-mensajes de conexión rechazada desaparecieron.
+Al habilitar la exportación, confirma que el receptor esté disponible y
+verifica la salida de la aplicación.
 
 ## 14. Diagnóstico de problemas
 
-### `Connection refused` en `localhost:4317`
+### Si aparece `Connection refused` en `localhost:4317`
 
--   Comprueba si hay un colector OTLP escuchando en ese puerto.
--   Si no vas a exportar logs, desactiva `quarkus.otel.logs.enabled`.
--   Reinicia las pruebas y verifica la salida.
+-   Comprueba que hayas habilitado la exportación y que haya un colector
+    OTLP escuchando en ese puerto.
+-   Si no vas a exportar logs, mantén `quarkus.otel.logs.enabled=false`.
+-   Si cambiaste la configuración, reinicia la aplicación y verifica la salida.
 
 ### Error al mover `eventos.log` a `eventos.log.1`
 
